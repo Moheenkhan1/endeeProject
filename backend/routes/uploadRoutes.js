@@ -106,6 +106,8 @@ router.post('/upload', upload.single('pdf'), async (req, res) => {
         page: Math.floor(chunk.chunkIndex / 3) + 1
       }
     }));
+    
+    console.log('📦 SAMPLE POINT TO INSERT:', JSON.stringify(points[0], null, 2));
 
     await endeeService.insertVectors(collectionName, points);
 

@@ -63,6 +63,8 @@ class EndeeService {
                 meta: JSON.stringify(vec.metadata || vec.meta || {})
             }));
 
+            console.log('📤 ENDEE INSERT PAYLOAD[0]:', JSON.stringify(payload[0], null, 2));
+
             const response = await axios.post(
                 `${this.baseUrl}/api/v1/index/${collectionName}/vector/insert`,
                 payload,
@@ -94,25 +96,35 @@ class EndeeService {
             // Decode msgpack response
             const buffer = Buffer.from(response.data);
             const decoded = decode(buffer);
-            console.log(`✅ Search completed, decoded ${Array.isArray(decoded) ? decoded.length : 0} results`);
+            console.log('🔍 DECODED SEARCH RESULTS:', JSON.stringify(decoded, (key, value) => {
+    if (value instanceof Uint8Array || Buffer.isBuffer(value)) return `<Buffer len=${value.length}>`;
+    return value;
+}, 2));
 
             // Parse results - each result has id, score/distance, and meta (stringified JSON)
             let results = [];
             if (Array.isArray(decoded)) {
                 results = decoded.map(item => {
                     let meta = {};
-                    // meta could be a string, a Buffer/Uint8Array, or already an object
-                    if (item.meta) {
-                        let metaStr = item.meta;
-                        if (metaStr instanceof Uint8Array || Buffer.isBuffer(metaStr)) {
-                            metaStr = Buffer.from(metaStr).toString('utf-8');
-                        }
-                        if (typeof metaStr === 'string') {
-                            try { meta = JSON.parse(metaStr); } catch(e) { meta = { raw: metaStr }; }
-                        } else if (typeof metaStr === 'object') {
-                            meta = metaStr;
-                        }
-                    }
+// In endeeService.js search() function
+if (item.meta) {
+    let metaStr = item.meta;
+    
+    // Handle Buffer/Uint8Array -> String conversion
+    if (Buffer.isBuffer(metaStr) || metaStr instanceof Uint8Array) {
+        metaStr = Buffer.from(metaStr).toString('utf-8');
+    }
+    
+    // Parse JSON string
+    if (typeof metaStr === 'string') {
+        try {
+            meta = JSON.parse(metaStr);
+        } catch (e) { // Raw fallback for debug
+            console.error('⚠️ Meta parsing error:', e.message);
+            meta = { error: e.message, raw: metaStr.substring(0, 100) };
+        }
+    }
+}
                     return {
                         id: item.id,
                         score: item.score ?? item.distance ?? 0,
@@ -124,6 +136,10 @@ class EndeeService {
                     };
                 });
             }
+
+            if (results.length > 0) {
+    console.log('🔍 SAMPLE META:', JSON.stringify(results[0], null, 2));
+}
 
             return results;
         } catch (error) {

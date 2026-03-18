@@ -1,19 +1,30 @@
 # 📄 Endee PDF RAG — Intelligent Document Q&A System
 
-A full-stack **Retrieval-Augmented Generation (RAG)** application that lets users upload PDF documents and ask natural language questions about their content. The system uses **Endee** as a high-performance vector database, **Mistral AI** for embeddings and chat, and a **React + Node.js** stack for the web interface.
+A full-stack **Retrieval-Augmented Generation (RAG)** application that allows users to upload PDF documents and ask natural language questions about their content.
 
-![Tech Stack](https://img.shields.io/badge/React-Frontend-blue) ![Node.js](https://img.shields.io/badge/Node.js-Backend-green) ![Endee](https://img.shields.io/badge/Endee-Vector_DB-purple) ![Mistral](https://img.shields.io/badge/Mistral_AI-LLM-orange)
+It uses:
+
+* **Endee** → Vector database
+* **Mistral AI** → Embeddings + LLM
+* **React + Node.js** → Full-stack app
 
 ---
 
 ## 🧠 What is RAG?
 
-Retrieval-Augmented Generation (RAG) is a technique that enhances LLM responses by first retrieving relevant information from a knowledge base, then using that context to generate accurate, grounded answers. Instead of relying solely on the LLM's training data, RAG ensures answers come directly from your uploaded documents.
+**Retrieval-Augmented Generation (RAG)** enhances LLM responses by:
+
+1. Retrieving relevant document data
+2. Passing it as context to the LLM
+3. Generating grounded, accurate answers
+
+👉 Ensures answers come from *your uploaded PDFs*, not just model memory.
 
 ---
 
 ## 🏗️ Architecture Overview
 
+```
 User (Browser)
    │
    ▼
@@ -42,211 +53,232 @@ React Frontend (:3001)
           (Store & Search Vectors)
                        │
                        ▼
-        Endee Vector Database (:8080)
+        Endee Vector DB (:8080)
         (HNSW + Cosine Similarity)
+```
 
 ---
 
 ## 📦 Tech Stack
 
-| Component        | Technology                          | Purpose                              |
-|-----------------|--------------------------------------|--------------------------------------|
-| **Frontend**     | React.js, Tailwind CSS, Axios       | User interface for upload and Q&A    |
-| **Backend**      | Node.js, Express.js                 | REST API, orchestration layer        |
-| **Vector DB**    | Endee (HNSW-based)                  | Store and search document embeddings |
-| **Embeddings**   | Mistral AI (`mistral-embed`)        | Convert text to 1024-dim vectors     |
-| **LLM**          | Mistral AI (`mistral-small-latest`) | Generate answers from context        |
-| **Metadata DB**  | MongoDB                             | Store document metadata              |
-| **PDF Parsing**  | pdf-parse                           | Extract text from PDF files          |
-| **Serialization**| MessagePack (@msgpack/msgpack)      | Decode Endee search responses        |
+| Component     | Technology                       | Purpose                   |
+| ------------- | -------------------------------- | ------------------------- |
+| Frontend      | React.js, Tailwind CSS, Axios    | UI for upload & Q&A       |
+| Backend       | Node.js, Express.js              | API & orchestration       |
+| Vector DB     | Endee (HNSW)                     | Store & search embeddings |
+| Embeddings    | Mistral (`mistral-embed`)        | Text → 1024-dim vectors   |
+| LLM           | Mistral (`mistral-small-latest`) | Answer generation         |
+| Metadata DB   | MongoDB                          | Document metadata         |
+| PDF Parsing   | pdf-parse                        | Extract text              |
+| Serialization | MessagePack                      | Decode Endee responses    |
 
 ---
 
 ## 🔄 Request Flow
 
-### Flow 1: PDF Upload Pipeline
+### 📄 Flow 1: PDF Upload
 
+```
 User → React → POST /upload
         │
         ▼
-Node Backend
+Backend
   ├─ Save PDF (Multer)
-  ├─ Extract text (pdf-parse)
-  ├─ Chunk text (~500 chars, overlap)
-  ├─ Generate embeddings (Mistral API)
-  ├─ Create Endee index (HNSW, cosine)
-  ├─ Store vectors + metadata (Endee)
-  ├─ Save doc info (MongoDB)
+  ├─ Extract text
+  ├─ Chunk text (~500 chars)
+  ├─ Generate embeddings
+  ├─ Create Endee index
+  ├─ Store vectors
+  ├─ Save metadata (MongoDB)
   └─ Return success
+```
 
-### Flow 2: Question Answering Pipeline
+👉 **Pipeline:** `PDF → Text → Chunks → Embeddings → Vector DB`
 
+---
 
+### ❓ Flow 2: Question Answering
+
+```
 User → React → POST /query
         │
         ▼
-Node Backend (RAG)
-  ├─ Convert question → embedding
-  ├─ Search top-K chunks (Endee)
-  ├─ Parse results (msgpack → JSON)
-  ├─ Build context from chunks
-  ├─ Send context + question → Mistral LLM
+Backend (RAG)
+  ├─ Question → embedding
+  ├─ Search top-K chunks
+  ├─ Parse results
+  ├─ Build context
+  ├─ Send to LLM
   └─ Return answer + sources
+```
 
-### Flow 3: Document Management
+👉 **Pipeline:** `Question → Retrieve → Generate`
 
+---
 
-GET /documents      → Fetch all docs (MongoDB)
+### 🗂️ Flow 3: Document Management
+
+```
+GET /documents → List documents
 
 DELETE /documents/:id
   ├─ Remove from MongoDB
   ├─ Delete Endee index
   └─ Delete PDF file
+```
 
 ---
 
 ## 🚀 Installation & Setup
 
-### Prerequisites
+### ✅ Prerequisites
 
-| Requirement    | Version  | Notes                                        |
-|---------------|----------|----------------------------------------------|
-| Node.js        | ≥ 18.x   | JavaScript runtime                           |
-| npm            | ≥ 9.x    | Package manager (comes with Node.js)         |
-| MongoDB        | ≥ 6.x    | Running on localhost:27017                    |
-| WSL 2          | Ubuntu   | Required to run Endee on Windows             |
-| Mistral AI Key | —        | Get from https://console.mistral.ai/api-keys |
+| Requirement     | Version | Notes              |
+| --------------- | ------- | ------------------ |
+| Node.js         | ≥ 18    | Runtime            |
+| npm             | ≥ 9     | Package manager    |
+| MongoDB         | ≥ 6     | Local instance     |
+| WSL 2           | Ubuntu  | Required for Endee |
+| Mistral API Key | —       | Required           |
 
-### Step 1: Clone the Repository
+---
+
+### 1️⃣ Clone Repository
 
 ```bash
 git clone https://github.com/your-username/endee-pdf-rag.git
 cd endee-pdf-rag
 ```
 
-### Step 2: Set Up Endee Vector Database (WSL)
+---
 
+### 2️⃣ Start Endee (WSL)
+
+```bash
 cd /mnt/c/.../endee-pdf-rag/endee
 chmod +x endee
 ./endee --port 8080 --data-dir ./endee_data
-
 ```
 
-Keep this terminal open. Endee must be running before starting the backend.
+👉 Runs on: `http://127.0.0.1:8080`
 
-### Step 3: Start MongoDB
+---
 
-mongosh --eval "db.runCommand({ping:1})"
-# or (WSL)
+### 3️⃣ Start MongoDB
+
+```bash
+mongosh --eval "db.runCommand({ ping: 1 })"
+# OR (WSL)
 sudo systemctl start mongod
-
 ```
 
-### Step 4: Set Up Backend
+---
 
+### 4️⃣ Backend Setup
+
+```bash
 cd backend
 npm install
-
-# Create environment file
-notepad .env
 ```
 
-Add the following to `.env`:
+Create `.env`:
 
+```env
 PORT=5000
 MONGODB_URI=mongodb://localhost:27017/endee_pdf_rag
 MISTRAL_API_KEY=your_key
 ENDEE_URL=http://127.0.0.1:8080
 ```
 
-Start the backend:
+Run:
 
-```powershell
+```bash
 npm run dev
+```
 
+👉 Backend: `http://localhost:5000`
 
-### Step 5: Set Up Frontend
+---
 
+### 5️⃣ Frontend Setup
+
+```bash
 cd frontend
 npm install
 npm start
-
-# Opens browser at http://localhost:3001
 ```
 
-### Step 6: Verify Everything is Running
+👉 Frontend: `http://localhost:3001`
 
-| Service   | URL                         | Status Check                  |
-|----------|-----------------------------|-------------------------------|
-| Frontend  | http://localhost:3001        | Browser opens automatically   |
-| Backend   | http://localhost:5000        | Check terminal for ✅ logs    |
-| Endee     | http://127.0.0.1:8080       | `curl http://127.0.0.1:8080/api/v1/health` |
-| MongoDB   | mongodb://localhost:27017   | `mongosh --eval "db.ping()"` |
+---
+
+### 6️⃣ Verify Services
+
+| Service  | URL                   |
+| -------- | --------------------- |
+| Frontend | http://localhost:3001 |
+| Backend  | http://localhost:5000 |
+| Endee    | http://127.0.0.1:8080 |
+| MongoDB  | localhost:27017       |
 
 ---
 
 ## 📁 Project Structure
 
-
+```
 endee-pdf-rag/
 ├── backend/
 │   ├── routes/
-│   │   ├── uploadRoutes.js       # PDF upload & processing endpoints
-│   │   └── queryRoutes.js        # Question answering endpoint
 │   ├── services/
-│   │   ├── pdfService.js         # PDF text extraction & chunking
-│   │   ├── embeddingService.js   # Mistral AI embedding generation
-│   │   ├── endeeService.js       # Endee vector DB client (CRUD + search)
-│   │   └── ragService.js         # RAG pipeline orchestration
-│   ├── uploads/                  # Uploaded PDF files (auto-created)
-│   ├── server.js                 # Express app entry point
-│   ├── package.json
-│   └── .env                      # Environment variables
+│   ├── uploads/
+│   ├── server.js
+│   └── .env
 │
 ├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── FileUpload.jsx    # PDF upload component
-│   │   │   ├── QueryInterface.jsx # Q&A chat component
-│   │   │   └── DocumentList.jsx  # Document management component
-│   │   ├── App.js                # Main app layout
-│   │   └── index.js              # React entry point
-│   ├── package.json
-│   └── tailwind.config.js
+│   ├── src/components/
+│   ├── App.js
+│   └── index.js
 │
 ├── endee/
-│   ├── endee                     # Endee binary (Linux/WSL)
-│   └── endee_data/               # Endee persistent data directory
+│   ├── endee
+│   └── endee_data/
 │
 └── README.md
+```
 
 ---
 
-## ⚙️ Endee API Endpoints Used
+## ⚙️ Endee API Endpoints
 
-| Method | Endpoint                                  | Purpose                    |
-|--------|------------------------------------------|----------------------------|
-| GET    | `/api/v1/health`                         | Health check               |
-| POST   | `/api/v1/index/create`                   | Create HNSW index          |
-| POST   | `/api/v1/index/{name}/vector/insert`     | Insert vectors (JSON)      |
-| POST   | `/api/v1/index/{name}/search`            | Similarity search (msgpack response) |
-| GET    | `/api/v1/index/{name}/info`              | Get index info             |
-| GET    | `/api/v1/index/list`                     | List all indexes           |
-| DELETE | `/api/v1/index/{name}`                   | Delete index               |
+| Method | Endpoint                           | Purpose           |
+| ------ | ---------------------------------- | ----------------- |
+| GET    | /api/v1/health                     | Health check      |
+| POST   | /api/v1/index/create               | Create index      |
+| POST   | /api/v1/index/{name}/vector/insert | Insert vectors    |
+| POST   | /api/v1/index/{name}/search        | Similarity search |
+| GET    | /api/v1/index/list                 | List indexes      |
+| DELETE | /api/v1/index/{name}               | Delete index      |
 
+---
 
 ## 📝 Example Usage
 
-1. **Start all services** (Endee → MongoDB → Backend → Frontend)
+1. Start all services
 
-2. **Upload a PDF**: Click "Upload PDF" and select a document
+2. Upload a PDF
 
-3. **Ask questions**:
-   - "What are the candidate's technical skills?"
-   - "Summarize the work experience"
-   - "What certifications does the person have?"
-   - "What is their educational background?"
+3. Ask questions like:
 
-4. **View sources**: Each answer shows the relevant chunks retrieved from Endee with similarity scores
+   * "Summarize the document"
+   * "What are the key skills?"
+   * "What is the experience?"
+
+4. View answers with **source chunks + similarity scores**
+
+---
+
+## ⚡ One-Line Summary
+
+**Upload documents → Convert to vectors → Retrieve relevant context → Generate accurate answers**
 
 ---
