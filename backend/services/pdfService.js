@@ -1,79 +1,97 @@
 /**
  * PDF Processing Service
- * Extracts text from PDFs and splits into chunks for Endee vector storage
+ * Spawns pdf_worker.js as an isolated child process.
  */
 
-const fs = require('fs');
-const pdfParse = require('pdf-parse');
+const { spawn } = require('child_process');
+const path = require('path');
 
 class PDFService {
   constructor() {
-    this.chunkSize = 500;      // characters per chunk
-    this.chunkOverlap = 100;   // overlap between chunks
+    this.chunkSize = 1200;   // increased from 800 — more context per chunk
+    this.chunkOverlap = 200; // increased from 150 — better continuity across chunks
+    this.workerPath = path.join(__dirname, '../pdf_worker.js');
   }
 
-  /**
-   * Extract text from a PDF file
-   */
-  async extractText(filePath) {
-    try {
-      const dataBuffer = fs.readFileSync(filePath);
-      const data = await pdfParse(dataBuffer);
+  extractText(filePath) {
+    return new Promise((resolve, reject) => {
+      let stdout = '';
 
-      console.log(`📄 Extracted ${data.numpages} pages, ${data.text.length} characters`);
+      const worker = spawn(process.execPath, [this.workerPath, filePath], {
+        env: process.env
+      });
 
-      return {
-        text: data.text,
-        numPages: data.numpages,
-        info: data.info
-      };
-    } catch (error) {
-      console.error('❌ PDF extraction error:', error.message);
-      throw new Error(`Failed to extract PDF text: ${error.message}`);
-    }
+      worker.stdout.on('data', (d) => { stdout += d.toString(); });
+      worker.stderr.on('data', () => {});
+
+      worker.on('close', () => {
+        try {
+          const jsonStart = stdout.indexOf('{');
+          const jsonEnd = stdout.lastIndexOf('}');
+          if (jsonStart === -1 || jsonEnd === -1) {
+            return reject(new Error(`No JSON in worker output. Raw: ${stdout.substring(0, 200)}`));
+          }
+          const result = JSON.parse(stdout.substring(jsonStart, jsonEnd + 1));
+          if (result.error) return reject(new Error(result.error));
+          if (!result.text || result.text.length === 0) {
+            return reject(new Error('No text extracted — PDF may be image-based or encrypted'));
+          }
+          console.log(`📄 Extracted ${result.numPages} pages, ${result.charCount} characters`);
+          resolve({ text: result.text, numPages: result.numPages, info: {} });
+        } catch (e) {
+          reject(new Error(`Worker parse error: ${e.message} | stdout: ${stdout.substring(0, 300)}`));
+        }
+      });
+
+      worker.on('error', (err) => {
+        reject(new Error(`Failed to spawn PDF worker: ${err.message}`));
+      });
+    });
   }
 
-  /**
-   * Split text into overlapping chunks for embedding and Endee storage
-   * Uses recursive character splitting for better chunk quality
-   */
   splitIntoChunks(text, documentName) {
     const chunks = [];
-    const sentences = text.split(/(?<=[.!?])\s+/);
-
-    let currentChunk = '';
+    let start = 0;
     let chunkIndex = 0;
 
-    for (const sentence of sentences) {
-      if (currentChunk.length + sentence.length > this.chunkSize && currentChunk.length > 0) {
+    while (start < text.length) {
+      let end = Math.min(start + this.chunkSize, text.length);
+
+      // Prefer breaking at sentence boundaries for cleaner chunks
+      if (end < text.length) {
+        // Try period first, then comma, then space
+        const sentenceEnd = text.lastIndexOf('. ', end);
+        const commaEnd = text.lastIndexOf(', ', end);
+        const spaceEnd = text.lastIndexOf(' ', end);
+
+        if (sentenceEnd > start + this.chunkSize * 0.5) {
+          end = sentenceEnd + 1;
+        } else if (commaEnd > start + this.chunkSize * 0.6) {
+          end = commaEnd + 1;
+        } else if (spaceEnd > start + this.chunkSize * 0.7) {
+          end = spaceEnd + 1;
+        }
+      }
+
+      const chunkText = text.substring(start, end).trim();
+
+      if (chunkText.length > 50) {
         chunks.push({
-          text: currentChunk.trim(),
+          text: chunkText,
           chunkIndex,
           documentName,
-          characterCount: currentChunk.trim().length
+          characterCount: chunkText.length,
+          page: Math.floor(chunkIndex / 3) + 1
         });
-
-        // Keep overlap
-        const words = currentChunk.split(' ');
-        const overlapWords = words.slice(-Math.floor(words.length * 0.2));
-        currentChunk = overlapWords.join(' ') + ' ' + sentence;
         chunkIndex++;
-      } else {
-        currentChunk += (currentChunk ? ' ' : '') + sentence;
       }
+
+      // Always advance — prevent infinite loop
+      const nextStart = end - this.chunkOverlap;
+      start = nextStart > start ? nextStart : end;
     }
 
-    // Don't forget the last chunk
-    if (currentChunk.trim().length > 0) {
-      chunks.push({
-        text: currentChunk.trim(),
-        chunkIndex,
-        documentName,
-        characterCount: currentChunk.trim().length
-      });
-    }
-
-    console.log(`✂️ Split into ${chunks.length} chunks for Endee storage`);
+    console.log(`✂️  Split into ${chunks.length} chunks (avg ${Math.round(text.length / Math.max(chunks.length, 1))} chars each)`);
     return chunks;
   }
 }

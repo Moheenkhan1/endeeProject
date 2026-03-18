@@ -1,8 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const mongoose = require('mongoose');
 const dotenv = require('dotenv');
-const path = require('path');
 
 dotenv.config();
 
@@ -22,7 +20,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api', uploadRoutes);
 app.use('/api', queryRoutes);
 
-// Health check — includes Endee connectivity
+// Health check — Endee only
 app.get('/api/health', async (req, res) => {
   try {
     const endeeHealth = await endeeService.healthCheck();
@@ -33,10 +31,7 @@ app.get('/api/health', async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    res.status(500).json({
-      status: 'error',
-      message: error.message
-    });
+    res.status(500).json({ status: 'error', message: error.message });
   }
 });
 
@@ -50,16 +45,9 @@ app.get('/api/collections', async (req, res) => {
   }
 });
 
-// Connect to MongoDB and start server
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => {
-    console.log('✅ Connected to MongoDB');
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📦 Endee Vector DB: ${process.env.ENDEE_HOST}`);
-    });
-  })
-  .catch(err => {
-    console.error('❌ MongoDB connection error:', err);
-    process.exit(1);
-  });
+// Start server — no DB dependency
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📦 Endee Vector DB: ${process.env.ENDEE_HOST || 'http://127.0.0.1:8080'}`);
+  console.log(`🧠 Mistral API ready`);
+});

@@ -1,7 +1,7 @@
 /**
  * RAG Service — Orchestrates the full RAG pipeline using Endee
- * 
- * Flow: Question → Embed → Search Endee → Build Context → LLM Answer
+ *
+ * Flow: Question → Embed → Search Endee → Build Context → Mistral Answer
  */
 
 const axios = require('axios');
@@ -19,6 +19,7 @@ class RAGService {
       timeout: 60000
     });
     this.chatModel = 'mistral-small-latest';
+    this.topK = 8;
   }
 
   /**
@@ -30,46 +31,56 @@ class RAGService {
     console.log(`📦 Endee Collection: ${collectionName}`);
     console.log('='.repeat(60));
 
-    // Step 1: Generate query embedding
+    // Step 1: Embed the question
     console.log('\n🔹 Step 1: Generating query embedding...');
     const queryEmbedding = await embeddingService.generateQueryEmbedding(question);
+    console.log(`   → Embedding dim: ${queryEmbedding.length}`);
 
-    // Step 2: Search Endee vector database for relevant chunks
-    console.log('🔹 Step 2: Searching Endee vector database...');
-    const endeeResults = await endeeService.search(collectionName, queryEmbedding, 5);
+    // Step 2: Search Endee
+    console.log('🔹 Step 2: Searching Endee...');
+    const results = await endeeService.search(collectionName, queryEmbedding, this.topK);
 
-    if (endeeResults.length === 0) {
+    if (results.length === 0) {
+      console.warn('⚠️  No results returned from Endee search');
       return {
-        answer: 'I could not find any relevant information in the uploaded document to answer your question. Please try rephrasing your question or ensure the document contains relevant content.',
+        answer:
+          'No relevant information was found in the document for your question. ' +
+          'Please make sure the document was uploaded successfully, or try rephrasing your question.',
         sources: [],
-        endeeSearchResults: 0
+        endeeSearchResults: 0,
+        collectionUsed: collectionName
       };
     }
 
-    console.log(`🔹 Endee returned ${endeeResults.length} relevant chunks:`);
-    endeeResults.forEach((r, i) => {
-      console.log(`   [${i + 1}] Score: ${r.score.toFixed(4)} | Chunk #${r.chunkIndex} | ${r.text.substring(0, 80)}...`);
-    });
+    // Step 3: Filter low-quality results
+    const SCORE_THRESHOLD = 0.2; // cosine similarity — 0 = orthogonal, 1 = identical
+    const relevantResults = results.filter(r => r.score >= SCORE_THRESHOLD);
 
-    // Step 3: Build context from Endee results
-    console.log('🔹 Step 3: Building context from Endee results...');
-    const context = this.buildContext(endeeResults);
+    console.log(`🔹 ${results.length} results, ${relevantResults.length} above score threshold (${SCORE_THRESHOLD})`);
 
-    // Step 4: Generate answer using Mistral AI with Endee context
-    console.log('🔹 Step 4: Generating answer with Mistral AI...');
+    const finalResults = relevantResults.length > 0 ? relevantResults : results; // fallback: use all
+
+    // Step 4: Build context
+    console.log('🔹 Step 3: Building context...');
+    const context = this.buildContext(finalResults);
+    console.log(`   → Context length: ${context.length} chars`);
+
+    // Step 5: Generate answer
+    console.log('🔹 Step 4: Calling Mistral AI...');
     const answer = await this.generateAnswer(question, context);
 
     console.log('✅ RAG pipeline complete\n');
 
     return {
       answer,
-      sources: endeeResults.map(r => ({
+      sources: finalResults.map(r => ({
         text: r.text,
         score: r.score,
         chunkIndex: r.chunkIndex,
-        page: r.page
+        page: r.page,
+        documentName: r.documentName
       })),
-      endeeSearchResults: endeeResults.length,
+      endeeSearchResults: finalResults.length,
       collectionUsed: collectionName
     };
   }
@@ -77,35 +88,38 @@ class RAGService {
   /**
    * Build context string from Endee search results
    */
-  buildContext(endeeResults) {
-    return endeeResults
-      .map((result, index) => {
-        return `[Source ${index + 1}] (Relevance: ${(result.score * 100).toFixed(1)}%)\n${result.text}`;
+  buildContext(results) {
+    return results
+      .map((r, i) => {
+        const scorePercent = (r.score * 100).toFixed(1);
+        const pageInfo = r.page ? ` | Page ${r.page}` : '';
+        return `[Source ${i + 1}${pageInfo} | Relevance: ${scorePercent}%]\n${r.text.trim()}`;
       })
       .join('\n\n---\n\n');
   }
 
   /**
-   * Generate answer using Mistral AI with context from Endee
+   * Generate answer using Mistral AI with retrieved context
    */
   async generateAnswer(question, context) {
-    const systemPrompt = `You are a helpful document Q&A assistant. You answer questions based ONLY on the provided context retrieved from the Endee vector database. 
+    const systemPrompt = `You are an expert document Q&A assistant. Your job is to answer questions accurately using ONLY the provided context passages retrieved from a PDF document.
 
-Rules:
-1. Answer based ONLY on the provided context
-2. If the context doesn't contain enough information, say so
-3. Cite the source numbers [Source X] when referencing information
-4. Be concise but thorough
-5. If you're unsure, indicate your level of confidence`;
+Important rules:
+- Base your answer exclusively on the provided context
+- If the context contains a clear answer, give it directly and confidently
+- Cite sources using [Source N] when referencing specific passages
+- If the context is partially relevant, extract what is useful and be clear about gaps
+- Do NOT say "I don't have enough data" if the context clearly answers the question
+- Be concise and precise`;
 
-    const userPrompt = `Context from Endee Vector Database:
+    const userPrompt = `Context retrieved from the document:
 ---
 ${context}
 ---
 
 Question: ${question}
 
-Please answer the question based on the context above.`;
+Answer based on the context above:`;
 
     try {
       const response = await this.mistralClient.post('/chat/completions', {
@@ -114,14 +128,16 @@ Please answer the question based on the context above.`;
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        temperature: 0.3,
+        temperature: 0.2,
         max_tokens: 1024
       });
 
-      return response.data.choices[0].message.content;
+      const answer = response.data.choices[0].message.content;
+      console.log(`   → Answer length: ${answer.length} chars`);
+      return answer;
     } catch (error) {
-      console.error('❌ Mistral chat error:', error.response?.data || error.message);
-      throw new Error(`Failed to generate answer: ${error.message}`);
+      const msg = error.response?.data ? JSON.stringify(error.response.data) : error.message;
+      throw new Error(`Failed to generate answer: ${msg}`);
     }
   }
 }

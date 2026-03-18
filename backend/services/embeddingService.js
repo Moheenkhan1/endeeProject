@@ -1,79 +1,60 @@
 /**
  * Embedding Service — Mistral AI
- * Generates vector embeddings for text chunks to store in Endee
+ * Uses a fresh https agent per request to avoid TLS session memory leaks.
  */
 
 const axios = require('axios');
+const https = require('https');
 
 class EmbeddingService {
   constructor() {
     this.apiKey = process.env.MISTRAL_API_KEY;
     this.embeddingModel = 'mistral-embed';
     this.baseURL = 'https://api.mistral.ai/v1';
-    this.client = axios.create({
+  }
+
+  _makeClient() {
+    // Fresh agent per call — prevents TLS session accumulation in heap
+    return axios.create({
       baseURL: this.baseURL,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.apiKey}`
       },
-      timeout: 60000
+      timeout: 60000,
+      httpsAgent: new https.Agent({ keepAlive: false })
     });
   }
 
-  /**
-   * Generate embeddings for an array of texts
-   * These embeddings will be stored as vectors in Endee
-   */
   async generateEmbeddings(texts) {
     try {
-      // Batch process — Mistral supports multiple inputs
-      const batchSize = 10;
-      const allEmbeddings = [];
-
-      for (let i = 0; i < texts.length; i += batchSize) {
-        const batch = texts.slice(i, i + batchSize);
-
-        console.log(`🧠 Generating embeddings batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(texts.length / batchSize)} for Endee`);
-
-        const response = await this.client.post('/embeddings', {
-          model: this.embeddingModel,
-          input: batch
-        });
-
-        const embeddings = response.data.data.map(item => item.embedding);
-        allEmbeddings.push(...embeddings);
-
-        // Rate limiting
-        if (i + batchSize < texts.length) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      }
-
-      console.log(`✅ Generated ${allEmbeddings.length} embeddings (dim: ${allEmbeddings[0]?.length}) for Endee storage`);
-      return allEmbeddings;
+      const client = this._makeClient();
+      const response = await client.post('/embeddings', {
+        model: this.embeddingModel,
+        input: texts
+      });
+      const embeddings = response.data.data.map(item => item.embedding);
+      console.log(`✅ Generated ${embeddings.length} embeddings (dim: ${embeddings[0]?.length})`);
+      return embeddings;
     } catch (error) {
-      console.error('❌ Embedding generation error:', error.response?.data || error.message);
-      throw new Error(`Failed to generate embeddings: ${error.message}`);
+      const msg = error.response?.data ? JSON.stringify(error.response.data) : error.message;
+      throw new Error(`Failed to generate embeddings: ${msg}`);
     }
   }
 
-  /**
-   * Generate a single embedding for a query
-   * Used for searching Endee vector database
-   */
   async generateQueryEmbedding(query) {
     try {
-      const response = await this.client.post('/embeddings', {
+      const client = this._makeClient();
+      const response = await client.post('/embeddings', {
         model: this.embeddingModel,
         input: [query]
       });
-
       const embedding = response.data.data[0].embedding;
-      console.log(`🔍 Generated query embedding (dim: ${embedding.length}) for Endee search`);
+      console.log(`🔍 Query embedding generated (dim: ${embedding.length})`);
       return embedding;
     } catch (error) {
-      console.error('❌ Query embedding error:', error.response?.data || error.message);
-      throw new Error(`Failed to generate query embedding: ${error.message}`);
+      const msg = error.response?.data ? JSON.stringify(error.response.data) : error.message;
+      throw new Error(`Failed to generate query embedding: ${msg}`);
     }
   }
 }
