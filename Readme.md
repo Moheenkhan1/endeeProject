@@ -59,9 +59,9 @@ Browser
 
 ### 1. Start Endee (WSL)
 ```bash
-cd endee
-chmod +x endee
-./endee --port 8080 --data-dir ./endee_data
+chmod +x ./install.sh ./run.sh
+./install.sh --release --avx2
+./run.sh
 ```
 
 ### 2. Backend
@@ -138,14 +138,8 @@ endee-pdf-rag/
 
 | Upload | Q&A |
 |--------|-----|
-| ![Upload](https://drive.google.com/file/d/1JN3hwS1R61wTEgok3NBfGVc0x5TzB9D_/view?usp=drivesdk) | ![QA](https://drive.google.com/file/d/1kgvG8TgGsmgw97bd1S-uPTJJxNGhnvm_/view?usp=drivesdk) |
+| ![Upload](https://drive.google.com/uc?export=view&id=1JN3hwS1R61wTEgok3NBfGVc0x5TzB9D_) | ![QA](https://drive.google.com/uc?export=view&id=1kgvG8TgGsmgw97bd1S-uPTJJxNGhnvm_) |
 
-_Replace the links above with your actual Google Drive image links._
 
 ---
 
-## Notes
-
-- No MongoDB required — document metadata is stored in memory
-- PDF parsing runs in an isolated child process to avoid memory issues
-- Each uploaded PDF gets its own Endee vector index
